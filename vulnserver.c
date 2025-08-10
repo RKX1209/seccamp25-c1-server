@@ -37,7 +37,6 @@ void draw_and_send_maze(int fd, char maze[MAZE_H][MAZE_W+1], const char *name, i
     for(int y=0;y<MAZE_H && len<(int)sizeof(out)-1;++y){ for(int x=0;x<MAZE_W && len<(int)sizeof(out)-1;++x){ out[len++]=(x==px&&y==py)?'@':maze[y][x]; } out[len++]='\n'; }
     out[len++]='\n'; out[len]=0; send_all(fd,out,(size_t)len);
 }
-
 static void sanitize_name(char *dst, size_t dstsz, const char *src){
     while(*src==' '||*src=='\t') ++src;
     strncpy(dst, src, dstsz-1); dst[dstsz-1]=0;
@@ -65,6 +64,9 @@ int main(void){
 
         char maze[MAZE_H][MAZE_W+1]; for(int y=0;y<MAZE_H;++y){strncpy(maze[y],maze_template[y],MAZE_W); maze[y][MAZE_W]=0;}
         int px=1, py=1;
+
+        // find fallback start if (1,1) is wall
+        if(maze[py][px]=='#'){ int found=0; for(int y=0;y<MAZE_H && !found;++y){ for(int x=0;x<MAZE_W;++x){ if(maze[y][x]==' '){ py=y; px=x; found=1; break; } } } }
 
         const char*instr="Controls: w=up, s=down, a=left, d=right, q=quit\nReach 'E' to win.\n";
         send_all(cfd,instr,strlen(instr));

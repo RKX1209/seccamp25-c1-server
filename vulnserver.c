@@ -80,6 +80,14 @@ int main(void){
             if(maze[ny][nx]=='#'){ const char*wall="Hit a wall.\n"; send_all(cfd,wall,strlen(wall)); continue; }
 
             px=nx; py=ny;
+
+            if(maze[py][px]=='E'){
+                char win[128]; int wn=snprintf(win,sizeof(win),"\nCongratulations %s! You reached the exit!\n\n",name);
+                send_all(cfd,win,(size_t)wn);
+                draw_and_send_maze(cfd,maze,name,px,py);
+                break;
+            }
+
             draw_and_send_maze(cfd,maze,name,px,py);
         }
         close(cfd);

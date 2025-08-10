@@ -104,16 +104,26 @@ int main(void) {
         client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
         if (client_fd < 0) { perror("accept"); continue; }
 
-        const char *welcome = "Enter your name:\n";
+        const char *welcome = "Welcome to maze server! Send your player name:\n";
         send_all(client_fd, welcome, strlen(welcome));
         ssize_t n = recv_line(client_fd, linebuf, sizeof(linebuf));
         if (n <= 0) { close(client_fd); continue; }
 
-        char name[NAME_MAX];
-        strncpy(name, linebuf, NAME_MAX-1);
-        name[NAME_MAX-1] = '\0';
+        char player_name[NAME_MAX];
+        char *p = linebuf;
+        while (*p == ' ' || *p == '\t') ++p;
+        strncpy(player_name, p, NAME_MAX-1);
+        player_name[NAME_MAX-1] = '\0';
+        for (int i = (int)strlen(player_name) - 1; i >= 0; --i) {
+            if (player_name[i] == ' ' || player_name[i] == '\t' || player_name[i] == '\r' || player_name[i] == '\n') player_name[i] = '\0';
+            else break;
+        }
+        if (player_name[0] == '\0') {
+            strncpy(player_name, "player", NAME_MAX-1);
+            player_name[NAME_MAX-1] = '\0';
+        }
 
-        const char *inst = "Controls: w/a/s/d, q to quit. Reach 'E' to win.\n";
+        const char *inst = "Controls: w=up, s=down, a=left, d=right, q=quit\nReach 'E' to win.\n";
         send_all(client_fd, inst, strlen(inst));
 
         int px = 1, py = 1;
@@ -125,35 +135,58 @@ int main(void) {
                 }
             }
         }
-        draw_maze_named(client_fd, px, py, name);
+        draw_maze_named(client_fd, px, py, player_name);
 
         while (1) {
             send_all(client_fd, "Your move> ", 11);
             ssize_t r = recv_line(client_fd, linebuf, sizeof(linebuf));
             if (r <= 0) break;
-            char c = linebuf[0];
-
-            if (c == 'q' || c == 'Q') break;
+            char cmd = '\0';
+            for (ssize_t i = 0; i < r; ++i) {
+                if (linebuf[i] == '\r' || linebuf[i] == '\n') continue;
+                if (linebuf[i] == ' ' || linebuf[i] == '\t') continue;
+                cmd = linebuf[i];
+                break;
+            }
+            if (cmd == '\0') continue;
 
             int nx = px, ny = py;
-            if (c == 'w' || c == 'W') --ny;
-            else if (c == 's' || c == 'S') ++ny;
-            else if (c == 'a' || c == 'A') --nx;
-            else if (c == 'd' || c == 'D') ++nx;
-
-            if (nx >= 0 && nx < MAZE_W && ny >= 0 && ny < MAZE_H && maze_template[ny][nx] != '#') {
-                px = nx; py = ny;
+            if (cmd == 'w' || cmd == 'W') --ny;
+            else if (cmd == 's' || cmd == 'S') ++ny;
+            else if (cmd == 'a' || cmd == 'A') --nx;
+            else if (cmd == 'd' || cmd == 'D') ++nx;
+            else if (cmd == 'q' || cmd == 'Q') {
+                const char *bye = "Goodbye!\n";
+                send_all(client_fd, bye, strlen(bye));
+                break;
+            } else {
+                const char *unk = "Unknown command. Use w/a/s/d to move, q to quit.\n";
+                send_all(client_fd, unk, strlen(unk));
+                continue;
             }
+
+            if (nx < 0 || nx >= MAZE_W || ny < 0 || ny >= MAZE_H) {
+                const char *oob = "Can't move outside maze.\n";
+                send_all(client_fd, oob, strlen(oob));
+                continue;
+            }
+            if (maze_template[ny][nx] == '#') {
+                const char *wall = "Hit a wall.\n";
+                send_all(client_fd, wall, strlen(wall));
+                continue;
+            }
+
+            px = nx; py = ny;
 
             if (maze_template[py][px] == 'E') {
                 char winmsg[128];
-                int wn = snprintf(winmsg, sizeof(winmsg), "\nCongratulations %s! You reached the exit!\n\n", name);
+                int wn = snprintf(winmsg, sizeof(winmsg), "\nCongratulations %s! You reached the exit!\n\n", player_name);
                 send_all(client_fd, winmsg, (size_t)wn);
-                draw_maze_named(client_fd, px, py, name);
+                draw_maze_named(client_fd, px, py, player_name);
                 break;
             }
 
-            draw_maze_named(client_fd, px, py, name);
+            draw_maze_named(client_fd, px, py, player_name);
         }
 
         close(client_fd);

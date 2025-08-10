@@ -38,6 +38,21 @@ static void send_all(int fd, const char *buf, size_t len) {
     }
 }
 
+static void draw_maze(int fd, int px, int py) {
+    char line[64];
+    for (int y = 0; y < MAZE_H; ++y) {
+        for (int x = 0; x < MAZE_W; ++x) {
+            char c = maze_template[y][x];
+            if (x == px && y == py) c = '@';
+            line[x] = c;
+        }
+        line[MAZE_W] = '\0';
+        send_all(fd, line, strlen(line));
+        send_all(fd, "\n", 1);
+    }
+    send_all(fd, "\n", 1);
+}
+
 int main(void) {
     int server_fd = -1, client_fd = -1;
     struct sockaddr_in addr, caddr;
@@ -62,13 +77,11 @@ int main(void) {
         client_fd = accept(server_fd, (struct sockaddr*)&caddr, &clen);
         if (client_fd < 0) { perror("accept"); continue; }
 
-        const char *hdr = "Maze (view only)\n\n";
+        int px = 1, py = 1;
+        const char *hdr = "Maze (commit21)\n";
         send_all(client_fd, hdr, strlen(hdr));
-        for (int y = 0; y < MAZE_H; ++y) {
-            send_all(client_fd, maze_template[y], strlen(maze_template[y]));
-            send_all(client_fd, "\n", 1);
-        }
-        send_all(client_fd, "\n", 1);
+        draw_maze(client_fd, px, py);
+
         close(client_fd);
     }
 

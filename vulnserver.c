@@ -40,6 +40,26 @@ static void send_all(int fd, const char *buf, size_t len) {
     }
 }
 
+static ssize_t recv_line(int fd, char *buf, size_t maxlen) {
+    size_t idx = 0;
+    while (idx < maxlen - 1) {
+        char c;
+        ssize_t n = recv(fd, &c, 1, 0);
+        if (n == 1) {
+            if (c == '\r') continue;
+            if (c == '\n') break;
+            buf[idx++] = c;
+        } else if (n == 0) {
+            break;
+        } else {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+    }
+    buf[idx] = '\0';
+    return (ssize_t)idx;
+}
+
 static void draw_maze_named(int fd, int px, int py, const char *name) {
     char hdr[128];
     int n = snprintf(hdr, sizeof(hdr), "\nPlayer: %s\n", name ? name : "player");
@@ -63,7 +83,7 @@ int main(void) {
     int server_fd = -1, client_fd = -1;
     struct sockaddr_in server_addr, client_addr;
     socklen_t client_len = sizeof(client_addr);
-    char buf[MAX_LEN];
+    char linebuf[MAX_LEN];
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) { perror("socket"); return 1; }
@@ -86,12 +106,11 @@ int main(void) {
 
         const char *welcome = "Enter your name:\n";
         send_all(client_fd, welcome, strlen(welcome));
-        ssize_t r = recv(client_fd, buf, sizeof(buf)-1, 0);
-        if (r <= 0) { close(client_fd); continue; }
-        buf[r] = '\0';
+        ssize_t n = recv_line(client_fd, linebuf, sizeof(linebuf));
+        if (n <= 0) { close(client_fd); continue; }
 
         char name[NAME_MAX];
-        strncpy(name, buf, NAME_MAX-1);
+        strncpy(name, linebuf, NAME_MAX-1);
         name[NAME_MAX-1] = '\0';
 
         const char *inst = "Controls: w/a/s/d, q to quit\n";
@@ -102,10 +121,10 @@ int main(void) {
 
         while (1) {
             send_all(client_fd, "Your move> ", 11);
-            r = recv(client_fd, buf, sizeof(buf)-1, 0);
+            ssize_t r = recv_line(client_fd, linebuf, sizeof(linebuf));
             if (r <= 0) break;
-            buf[r] = '\0';
-            char c = buf[0];
+            char c = linebuf[0];
+
             if (c == 'q' || c == 'Q') break;
 
             int nx = px, ny = py;

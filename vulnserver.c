@@ -1,8 +1,3 @@
-// file: net_maze.c
-// Build: gcc -Wall -O2 -o net_maze net_maze.c
-// Run:   ./net_maze
-// Connect: nc 127.0.0.1 1234
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,26 +6,76 @@
 #include <sys/socket.h>
 
 #define MAX_LEN 512
-#define PORT 1234
-#define NAME_MAX 32
-#define MAZE_W 21
-#define MAZE_H 11
+#define PORT 4444
 
-static const char *maze_template[MAZE_H] = {
-    "#####################",
-    "#   #       #       #",
-    "# # # ##### # ##### #",
-    "# #   #   #   #   # #",
-    "# ##### # ##### # # #",
-    "#     # #     # #   #",
-    "##### # ##### # #####",
-    "#   #   #   # #     #",
-    "# # ##### # # ##### #",
-    "#     #   #   #   E #",
-    "#####################"
-};
+void process_input(const char *input) {
+    char buf[128];
+    memcpy(buf, input, MAX_LEN);
+}
 
-void send_all(int fd, const char *buf, size_t len) { size_t s=0; while(s<len){ssize_t n=send(fd,buf+s,len-s,0); if(n<=0)break; s+=(size_t)n;} }
-ssize_t recv_line(int fd, char *buf, size_t maxlen) { size_t i=0; while(i<maxlen-1){ char c; ssize_t n=recv(fd,&c,1,0); if(n==1){ if(c=='\r')continue; if(c=='\n')break; buf[i++]=c; } else if(n==0)break; else return -1; } buf[i]=0; return (ssize_t)i; }
-void draw_and_send_maze(int fd, char maze[
+int main() {
+    int server_fd, client_fd;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    char input[MAX_LEN];
 
+    // ソケット作成
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    // アドレス情報設定
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(PORT);
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+
+    // バインド
+    if (bind(server_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        perror("bind");
+        close(server_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    // 待ち受け開始
+    if (listen(server_fd, 1) < 0) {
+        perror("listen");
+        close(server_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Listening on port %d...\n", PORT);
+
+    while (1) {
+        client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
+        if (client_fd < 0) {
+            perror("accept");
+            continue;
+        }
+
+	// 🎉 Welcome メッセージ送信
+        const char *welcome_msg = "Welcome to seccmp25 C1 server! Send your input:\n";
+        write(client_fd, welcome_msg, strlen(welcome_msg));
+
+        while (1) {
+            memset(input, 0, MAX_LEN);
+            ssize_t received = recv(client_fd, input, MAX_LEN - 1, 0);
+            if (received <= 0) {
+                printf("Client disconnected.\n");
+                break;
+            }
+
+            // 標準出力にログ
+            printf("[*] Received %zd bytes\n", received);
+
+            // 入力処理（脆弱性のある関数）
+            process_input(input);
+        }
+        close(client_fd);
+    }
+
+    close(server_fd);
+    return 0;
+}

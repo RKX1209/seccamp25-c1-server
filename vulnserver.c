@@ -13,6 +13,23 @@
 #define MAX_LEN 512
 #define PORT 1234
 #define NAME_MAX 32
+#define MAZE_W 21
+#define MAZE_H 11
+
+// Simple maze template
+static const char *maze_template[MAZE_H] = {
+    "#####################",
+    "#   #       #       #",
+    "# # # ##### # ##### #",
+    "# #   #   #   #   # #",
+    "# ##### # ##### # # #",
+    "#     # #     # #   #",
+    "##### # ##### # #####",
+    "#   #   #   # #     #",
+    "# # ##### # # ##### #",
+    "#     #   #   #   E #",
+    "#####################"
+};
 
 void send_all(int fd, const char *buf, size_t len) {
     size_t sent = 0;
@@ -62,13 +79,23 @@ int main(void) {
 
         char linebuf[MAX_LEN];
         ssize_t n = recv_line(cfd, linebuf, sizeof(linebuf));
-        if (n > 0) {
-            char name[NAME_MAX];
-            strncpy(name, linebuf, NAME_MAX-1); name[NAME_MAX-1] = 0;
-            char out[128];
-            snprintf(out, sizeof(out), "Hello, %s\n", name);
-            send_all(cfd, out, strlen(out));
+        if (n <= 0) { close(cfd); continue; }
+
+        char name[NAME_MAX];
+        strncpy(name, linebuf, NAME_MAX-1); name[NAME_MAX-1] = 0;
+
+        // copy maze template
+        char maze[MAZE_H][MAZE_W+1];
+        for (int y = 0; y < MAZE_H; ++y) {
+            strncpy(maze[y], maze_template[y], MAZE_W);
+            maze[y][MAZE_W] = '\0';
         }
+
+        // show a simple header
+        char out[256];
+        snprintf(out, sizeof(out), "Player: %s\n(Maze ready)\n", name);
+        send_all(cfd, out, strlen(out));
+
         close(cfd);
     }
     close(server_fd);

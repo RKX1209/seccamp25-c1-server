@@ -38,6 +38,13 @@ void draw_and_send_maze(int fd, char maze[MAZE_H][MAZE_W+1], const char *name, i
     out[len++]='\n'; out[len]=0; send_all(fd,out,(size_t)len);
 }
 
+static void sanitize_name(char *dst, size_t dstsz, const char *src){
+    while(*src==' '||*src=='\t') ++src;
+    strncpy(dst, src, dstsz-1); dst[dstsz-1]=0;
+    for(int i=(int)strlen(dst)-1;i>=0;--i){ if(dst[i]==' '||dst[i]=='\t'||dst[i]=='\r'||dst[i]=='\n') dst[i]=0; else break; }
+    if(dst[0]==0){ strncpy(dst,"player",dstsz-1); dst[dstsz-1]=0; }
+}
+
 int main(void){
     int sfd=socket(AF_INET,SOCK_STREAM,0); if(sfd<0){perror("socket"); return 1;}
     int opt=1; setsockopt(sfd,SOL_SOCKET,SO_REUSEADDR,&opt,sizeof(opt));
@@ -54,7 +61,7 @@ int main(void){
         send_all(cfd,welcome,strlen(welcome));
         char line[MAX_LEN]; ssize_t n=recv_line(cfd,line,sizeof(line)); if(n<=0){close(cfd); continue;}
 
-        char name[NAME_MAX]; strncpy(name,line,NAME_MAX-1); name[NAME_MAX-1]=0;
+        char name[NAME_MAX]; sanitize_name(name, sizeof(name), line);
 
         char maze[MAZE_H][MAZE_W+1]; for(int y=0;y<MAZE_H;++y){strncpy(maze[y],maze_template[y],MAZE_W); maze[y][MAZE_W]=0;}
         int px=1, py=1;
@@ -87,7 +94,6 @@ int main(void){
                 draw_and_send_maze(cfd,maze,name,px,py);
                 break;
             }
-
             draw_and_send_maze(cfd,maze,name,px,py);
         }
         close(cfd);

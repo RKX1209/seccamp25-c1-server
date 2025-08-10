@@ -16,7 +16,6 @@
 #define MAZE_W 21
 #define MAZE_H 11
 
-// Simple maze template
 static const char *maze_template[MAZE_H] = {
     "#####################",
     "#   #       #       #",
@@ -55,12 +54,27 @@ ssize_t recv_line(int fd, char *buf, size_t maxlen) {
     return (ssize_t)idx;
 }
 
+void draw_and_send_maze(int client_fd, char maze[MAZE_H][MAZE_W+1], const char *name, int px, int py) {
+    char out[MAX_LEN];
+    int len = 0;
+    len += snprintf(out + len, sizeof(out) - len, "\nPlayer: %s\n", name);
+    for (int y = 0; y < MAZE_H && len < (int)sizeof(out) - 1; ++y) {
+        for (int x = 0; x < MAZE_W && len < (int)sizeof(out) - 1; ++x) {
+            if (x == px && y == py) out[len++] = '@';
+            else out[len++] = maze[y][x];
+        }
+        out[len++] = '\n';
+    }
+    out[len++] = '\n';
+    out[len] = '\0';
+    send_all(client_fd, out, (size_t)len);
+}
+
 int main(void) {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) { perror("socket"); return 1; }
 
-    int opt = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    int opt = 1; setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     struct sockaddr_in addr; memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET; addr.sin_port = htons(PORT); addr.sin_addr.s_addr = INADDR_ANY;
@@ -81,20 +95,14 @@ int main(void) {
         ssize_t n = recv_line(cfd, linebuf, sizeof(linebuf));
         if (n <= 0) { close(cfd); continue; }
 
-        char name[NAME_MAX];
-        strncpy(name, linebuf, NAME_MAX-1); name[NAME_MAX-1] = 0;
+        char player_name[NAME_MAX];
+        strncpy(player_name, linebuf, NAME_MAX-1); player_name[NAME_MAX-1] = 0;
 
-        // copy maze template
         char maze[MAZE_H][MAZE_W+1];
-        for (int y = 0; y < MAZE_H; ++y) {
-            strncpy(maze[y], maze_template[y], MAZE_W);
-            maze[y][MAZE_W] = '\0';
-        }
+        for (int y = 0; y < MAZE_H; ++y) { strncpy(maze[y], maze_template[y], MAZE_W); maze[y][MAZE_W] = '\0'; }
 
-        // show a simple header
-        char out[256];
-        snprintf(out, sizeof(out), "Player: %s\n(Maze ready)\n", name);
-        send_all(cfd, out, strlen(out));
+        int px = 1, py = 1;
+        draw_and_send_maze(cfd, maze, player_name, px, py);
 
         close(cfd);
     }

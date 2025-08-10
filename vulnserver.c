@@ -117,6 +117,14 @@ int main(void) {
         send_all(client_fd, inst, strlen(inst));
 
         int px = 1, py = 1;
+        if (maze_template[py][px] == '#') {
+            int found = 0;
+            for (int y = 0; y < MAZE_H && !found; ++y) {
+                for (int x = 0; x < MAZE_W; ++x) {
+                    if (maze_template[y][x] == ' ') { px = x; py = y; found = 1; break; }
+                }
+            }
+        }
         draw_maze_named(client_fd, px, py, name);
 
         while (1) {

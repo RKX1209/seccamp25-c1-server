@@ -78,9 +78,28 @@ int main(void) {
         if (client_fd < 0) { perror("accept"); continue; }
 
         int px = 1, py = 1;
-        const char *hdr = "Maze (commit21)\n";
-        send_all(client_fd, hdr, strlen(hdr));
+        const char *inst = "Use w/a/s/d then Enter. q to quit.\n";
+        send_all(client_fd, inst, strlen(inst));
         draw_maze(client_fd, px, py);
+
+        char buf[64];
+        while (1) {
+            send_all(client_fd, "Your move> ", 11);
+            ssize_t r = recv(client_fd, buf, sizeof(buf)-1, 0);
+            if (r <= 0) break;
+            buf[r] = '\0';
+            char c = buf[0];
+            if (c == 'q' || c == 'Q') break;
+            if (c == 'w' || c == 'W') --py;
+            else if (c == 's' || c == 'S') ++py;
+            else if (c == 'a' || c == 'A') --px;
+            else if (c == 'd' || c == 'D') ++px;
+            if (px < 0) px = 0;
+            if (py < 0) py = 0;
+            if (px >= MAZE_W) px = MAZE_W-1;
+            if (py >= MAZE_H) py = MAZE_H-1;
+            draw_maze(client_fd, px, py);
+        }
 
         close(client_fd);
     }

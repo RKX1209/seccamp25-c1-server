@@ -34,7 +34,10 @@ void send_all(int fd, const char *buf, size_t len) {
     size_t sent = 0; while (sent < len) { ssize_t n = send(fd, buf + sent, len - sent, 0); if (n <= 0) break; sent += (size_t)n; }
 }
 ssize_t recv_line(int fd, char *buf, size_t maxlen) {
-    size_t idx = 0; while (idx < maxlen - 1) { char c; ssize_t n = recv(fd, &c, 1, 0); if (n == 1) { if (c == '\r') continue; if (c == '\n') break; buf[idx++] = c; } else if (n == 0) break; else return -1; } buf[idx] = '\0'; return (ssize_t)idx;
+    size_t idx = 0; while (idx < maxlen - 1) { char c; ssize_t n = recv(fd, &c, 1, 0);
+        if (n == 1) { if (c == '\r') continue; if (c == '\n') break; buf[idx++] = c; }
+        else if (n == 0) break; else return -1; }
+    buf[idx] = '\0'; return (ssize_t)idx;
 }
 void draw_and_send_maze(int client_fd, char maze[MAZE_H][MAZE_W+1], const char *name, int px, int py) {
     char out[MAX_LEN]; int len = 0; len += snprintf(out + len, sizeof(out) - len, "\nPlayer: %s\n", name);
@@ -67,7 +70,12 @@ int main(void) {
 
         char maze[MAZE_H][MAZE_W+1]; for (int y = 0; y < MAZE_H; ++y) { strncpy(maze[y], maze_template[y], MAZE_W); maze[y][MAZE_W] = '\0'; }
 
-        int px = 1, py = 1; draw_and_send_maze(cfd, maze, player_name, px, py);
+        int px = 1, py = 1;
+
+        const char *instr = "Controls: w=up, s=down, a=left, d=right, q=quit\nReach 'E' to win.\n";
+        send_all(cfd, instr, strlen(instr));
+
+        draw_and_send_maze(cfd, maze, player_name, px, py);
 
         close(cfd);
     }

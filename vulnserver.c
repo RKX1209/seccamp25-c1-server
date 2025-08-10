@@ -113,7 +113,7 @@ int main(void) {
         strncpy(name, linebuf, NAME_MAX-1);
         name[NAME_MAX-1] = '\0';
 
-        const char *inst = "Controls: w/a/s/d, q to quit\n";
+        const char *inst = "Controls: w/a/s/d, q to quit. Reach 'E' to win.\n";
         send_all(client_fd, inst, strlen(inst));
 
         int px = 1, py = 1;
@@ -144,6 +144,15 @@ int main(void) {
             if (nx >= 0 && nx < MAZE_W && ny >= 0 && ny < MAZE_H && maze_template[ny][nx] != '#') {
                 px = nx; py = ny;
             }
+
+            if (maze_template[py][px] == 'E') {
+                char winmsg[128];
+                int wn = snprintf(winmsg, sizeof(winmsg), "\nCongratulations %s! You reached the exit!\n\n", name);
+                send_all(client_fd, winmsg, (size_t)wn);
+                draw_maze_named(client_fd, px, py, name);
+                break;
+            }
+
             draw_maze_named(client_fd, px, py, name);
         }
 

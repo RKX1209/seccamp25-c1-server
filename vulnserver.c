@@ -12,6 +12,7 @@
 
 #define MAX_LEN 512
 #define PORT 1234
+#define NAME_MAX 32
 
 void send_all(int fd, const char *buf, size_t len) {
     size_t sent = 0;
@@ -22,7 +23,20 @@ void send_all(int fd, const char *buf, size_t len) {
     }
 }
 
-static void send_text(int fd, const char *s) { send_all(fd, s, strlen(s)); }
+ssize_t recv_line(int fd, char *buf, size_t maxlen) {
+    size_t idx = 0;
+    while (idx < maxlen - 1) {
+        char c; ssize_t n = recv(fd, &c, 1, 0);
+        if (n == 1) {
+            if (c == '\r') continue;
+            if (c == '\n') break;
+            buf[idx++] = c;
+        } else if (n == 0) break;
+        else return -1;
+    }
+    buf[idx] = '\0';
+    return (ssize_t)idx;
+}
 
 int main(void) {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -43,9 +57,18 @@ int main(void) {
         int cfd = accept(server_fd, (struct sockaddr*)&caddr, &clen);
         if (cfd < 0) { perror("accept"); continue; }
 
-        send_text(cfd, "Welcome! Please type your name:\n");
-        char buf[MAX_LEN]; ssize_t n = recv(cfd, buf, sizeof(buf)-1, 0);
-        if (n > 0) { buf[n] = 0; send_text(cfd, "Hello, "); send_text(cfd, buf); }
+        const char *welcome_msg = "Welcome! Send your player name (max 31 chars):\n";
+        send_all(cfd, welcome_msg, strlen(welcome_msg));
+
+        char linebuf[MAX_LEN];
+        ssize_t n = recv_line(cfd, linebuf, sizeof(linebuf));
+        if (n > 0) {
+            char name[NAME_MAX];
+            strncpy(name, linebuf, NAME_MAX-1); name[NAME_MAX-1] = 0;
+            char out[128];
+            snprintf(out, sizeof(out), "Hello, %s\n", name);
+            send_all(cfd, out, strlen(out));
+        }
         close(cfd);
     }
     close(server_fd);

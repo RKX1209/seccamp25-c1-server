@@ -31,12 +31,11 @@ static const char *maze_template[MAZE_H] = {
 };
 
 void send_all(int fd, const char *buf, size_t len) { size_t s=0; while(s<len){ssize_t n=send(fd,buf+s,len-s,0); if(n<=0)break; s+=(size_t)n;} }
-ssize_t recv_line(int fd, char *buf, size_t maxlen) {
-    size_t i=0; while(i<maxlen-1){ char c; ssize_t n=recv(fd,&c,1,0); if(n==1){ if(c=='\r')continue; if(c=='\n')break; buf[i++]=c; } else if(n==0)break; else return -1; } buf[i]=0; return (ssize_t)i;
-}
+ssize_t recv_line(int fd, char *buf, size_t maxlen) { size_t i=0; while(i<maxlen-1){ char c; ssize_t n=recv(fd,&c,1,0); if(n==1){ if(c=='\r')continue; if(c=='\n')break; buf[i++]=c; } else if(n==0)break; else return -1; } buf[i]=0; return (ssize_t)i; }
 void draw_and_send_maze(int fd, char maze[MAZE_H][MAZE_W+1], const char *name, int px, int py) {
     char out[MAX_LEN]; int len=0; len+=snprintf(out+len,sizeof(out)-len,"\nPlayer: %s\n",name);
-    for(int y=0;y<MAZE_H && len<(int)sizeof(out)-1;++y){ for(int x=0;x<MAZE_W && len<(int)sizeof(out)-1;++x){ out[len++]=(x==px&&y==py)?'@':maze[y][x]; } out[len++]='\n'; } out[len++]='\n'; out[len]=0; send_all(fd,out,(size_t)len);
+    for(int y=0;y<MAZE_H && len<(int)sizeof(out)-1;++y){ for(int x=0;x<MAZE_W && len<(int)sizeof(out)-1;++x){ out[len++]=(x==px&&y==py)?'@':maze[y][x]; } out[len++]='\n'; }
+    out[len++]='\n'; out[len]=0; send_all(fd,out,(size_t)len);
 }
 
 int main(void){
@@ -64,17 +63,23 @@ int main(void){
         send_all(cfd,instr,strlen(instr));
         draw_and_send_maze(cfd,maze,name,px,py);
 
-        // simple input loop (no bounds yet)
         while(1){
             const char*prompt="Your move> "; send_all(cfd,prompt,strlen(prompt));
             char buf[64]; ssize_t r=recv(cfd,buf,sizeof(buf)-1,0); if(r<=0) break; buf[r]=0;
             char cmd=0; for(ssize_t i=0;i<r;++i){ if(buf[i]=='\r'||buf[i]=='\n'||buf[i]==' '||buf[i]=='\t') continue; cmd=buf[i]; break; }
             if(!cmd) continue;
+            int nx=px, ny=py;
             if(cmd=='q'||cmd=='Q'){ const char*bye="Goodbye!\n"; send_all(cfd,bye,strlen(bye)); break; }
-            if(cmd=='w'||cmd=='W') --py;
-            else if(cmd=='s'||cmd=='S') ++py;
-            else if(cmd=='a'||cmd=='A') --px;
-            else if(cmd=='d'||cmd=='D') ++px;
+            else if(cmd=='w'||cmd=='W') ny=py-1;
+            else if(cmd=='s'||cmd=='S') ny=py+1;
+            else if(cmd=='a'||cmd=='A') nx=px-1;
+            else if(cmd=='d'||cmd=='D') nx=px+1;
+            else { const char*unk="Unknown command. Use w/a/s/d to move, q to quit.\n"; send_all(cfd,unk,strlen(unk)); continue; }
+
+            if(nx<0||nx>=MAZE_W||ny<0||ny>=MAZE_H){ const char*oob="Can't move outside maze.\n"; send_all(cfd,oob,strlen(oob)); continue; }
+            if(maze[ny][nx]=='#'){ const char*wall="Hit a wall.\n"; send_all(cfd,wall,strlen(wall)); continue; }
+
+            px=nx; py=ny;
             draw_and_send_maze(cfd,maze,name,px,py);
         }
         close(cfd);

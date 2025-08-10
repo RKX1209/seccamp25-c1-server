@@ -1,0 +1,2 @@
+# Maze server
+Enjoy maze!

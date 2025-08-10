@@ -1,81 +1,78 @@
+// file: net_maze.c
+// Build: gcc -Wall -O2 -o net_maze net_maze.c
+// Run:   ./net_maze
+// Connect: nc <server-ip> 1234
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <errno.h>
 
-#define MAX_LEN 512
-#define PORT 4444
+#define PORT 1234
+#define MAZE_W 21
+#define MAZE_H 11
 
-void process_input(const char *input) {
-    char buf[128];
-    memcpy(buf, input, MAX_LEN);
+static const char *maze_template[MAZE_H] = {
+    "#####################",
+    "#   #       #       #",
+    "# # # ##### # ##### #",
+    "# #   #   #   #   # #",
+    "# ##### # ##### # # #",
+    "#     # #     # #   #",
+    "##### # ##### # #####",
+    "#   #   #   # #     #",
+    "# # ##### # # ##### #",
+    "#     #   #   #   E #",
+    "#####################"
+};
+
+static void send_all(int fd, const char *buf, size_t len) {
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t n = send(fd, buf + sent, len - sent, 0);
+        if (n <= 0) { if (n < 0 && errno == EINTR) continue; break; }
+        sent += (size_t)n;
+    }
 }
 
-int main() {
-    int server_fd, client_fd;
-    struct sockaddr_in server_addr, client_addr;
-    socklen_t client_len = sizeof(client_addr);
-    char input[MAX_LEN];
+int main(void) {
+    int server_fd = -1, client_fd = -1;
+    struct sockaddr_in addr, caddr;
+    socklen_t clen = sizeof(caddr);
 
-    // ソケット作成
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) {
-        perror("socket");
-        exit(EXIT_FAILURE);
-    }
+    if (server_fd < 0) { perror("socket"); return 1; }
+    int opt = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    // アドレス情報設定
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(PORT);
-    server_addr.sin_addr.s_addr = INADDR_ANY;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(PORT);
+    addr.sin_addr.s_addr = INADDR_ANY;
 
-    // バインド
-    if (bind(server_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        perror("bind");
-        close(server_fd);
-        exit(EXIT_FAILURE);
-    }
-
-    // 待ち受け開始
-    if (listen(server_fd, 1) < 0) {
-        perror("listen");
-        close(server_fd);
-        exit(EXIT_FAILURE);
-    }
+    if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) { perror("bind"); close(server_fd); return 1; }
+    if (listen(server_fd, 4) < 0) { perror("listen"); close(server_fd); return 1; }
 
     printf("Listening on port %d...\n", PORT);
 
     while (1) {
-        client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
-        if (client_fd < 0) {
-            perror("accept");
-            continue;
+        client_fd = accept(server_fd, (struct sockaddr*)&caddr, &clen);
+        if (client_fd < 0) { perror("accept"); continue; }
+
+        const char *hdr = "Maze (view only)\n\n";
+        send_all(client_fd, hdr, strlen(hdr));
+        for (int y = 0; y < MAZE_H; ++y) {
+            send_all(client_fd, maze_template[y], strlen(maze_template[y]));
+            send_all(client_fd, "\n", 1);
         }
-
-	// 🎉 Welcome メッセージ送信
-        const char *welcome_msg = "Welcome to seccmp25 C1 server! Send your input:\n";
-        write(client_fd, welcome_msg, strlen(welcome_msg));
-
-        while (1) {
-            memset(input, 0, MAX_LEN);
-            ssize_t received = recv(client_fd, input, MAX_LEN - 1, 0);
-            if (received <= 0) {
-                printf("Client disconnected.\n");
-                break;
-            }
-
-            // 標準出力にログ
-            printf("[*] Received %zd bytes\n", received);
-
-            // 入力処理（脆弱性のある関数）
-            process_input(input);
-        }
+        send_all(client_fd, "\n", 1);
         close(client_fd);
     }
 
     close(server_fd);
     return 0;
 }
+

@@ -78,7 +78,7 @@ int main(void) {
         if (client_fd < 0) { perror("accept"); continue; }
 
         int px = 1, py = 1;
-        const char *inst = "Use w/a/s/d then Enter. q to quit.\n";
+        const char *inst = "Use w/a/s/d then Enter. q to quit (walls block).\n";
         send_all(client_fd, inst, strlen(inst));
         draw_maze(client_fd, px, py);
 
@@ -90,14 +90,16 @@ int main(void) {
             buf[r] = '\0';
             char c = buf[0];
             if (c == 'q' || c == 'Q') break;
-            if (c == 'w' || c == 'W') --py;
-            else if (c == 's' || c == 'S') ++py;
-            else if (c == 'a' || c == 'A') --px;
-            else if (c == 'd' || c == 'D') ++px;
-            if (px < 0) px = 0;
-            if (py < 0) py = 0;
-            if (px >= MAZE_W) px = MAZE_W-1;
-            if (py >= MAZE_H) py = MAZE_H-1;
+
+            int nx = px, ny = py;
+            if (c == 'w' || c == 'W') --ny;
+            else if (c == 's' || c == 'S') ++ny;
+            else if (c == 'a' || c == 'A') --nx;
+            else if (c == 'd' || c == 'D') ++nx;
+
+            if (nx >= 0 && nx < MAZE_W && ny >= 0 && ny < MAZE_H) {
+                if (maze_template[ny][nx] != '#') { px = nx; py = ny; }
+            }
             draw_maze(client_fd, px, py);
         }
 

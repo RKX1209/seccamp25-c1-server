@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <errno.h>
 
+#define MAX_LEN 512
 #define PORT 1234
 #define MAZE_W 21
 #define MAZE_H 11
@@ -55,34 +56,35 @@ static void draw_maze(int fd, int px, int py) {
 
 int main(void) {
     int server_fd = -1, client_fd = -1;
-    struct sockaddr_in addr, caddr;
-    socklen_t clen = sizeof(caddr);
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t client_len = sizeof(client_addr);
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) { perror("socket"); return 1; }
     int opt = 1;
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT);
-    addr.sin_addr.s_addr = INADDR_ANY;
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(PORT);
+    server_addr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) { perror("bind"); close(server_fd); return 1; }
+    if (bind(server_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) { perror("bind"); close(server_fd); return 1; }
     if (listen(server_fd, 4) < 0) { perror("listen"); close(server_fd); return 1; }
 
     printf("Listening on port %d...\n", PORT);
 
     while (1) {
-        client_fd = accept(server_fd, (struct sockaddr*)&caddr, &clen);
+        client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
         if (client_fd < 0) { perror("accept"); continue; }
 
+        const char *intro = "Maze server (commit24)\nControls: w/a/s/d + Enter, q to quit.\n\n";
+        send_all(client_fd, intro, strlen(intro));
+
         int px = 1, py = 1;
-        const char *inst = "Use w/a/s/d then Enter. q to quit (walls block).\n";
-        send_all(client_fd, inst, strlen(inst));
         draw_maze(client_fd, px, py);
 
-        char buf[64];
+        char buf[MAX_LEN];
         while (1) {
             send_all(client_fd, "Your move> ", 11);
             ssize_t r = recv(client_fd, buf, sizeof(buf)-1, 0);
@@ -97,8 +99,8 @@ int main(void) {
             else if (c == 'a' || c == 'A') --nx;
             else if (c == 'd' || c == 'D') ++nx;
 
-            if (nx >= 0 && nx < MAZE_W && ny >= 0 && ny < MAZE_H) {
-                if (maze_template[ny][nx] != '#') { px = nx; py = ny; }
+            if (nx >= 0 && nx < MAZE_W && ny >= 0 && ny < MAZE_H && maze_template[ny][nx] != '#') {
+                px = nx; py = ny;
             }
             draw_maze(client_fd, px, py);
         }

@@ -1,7 +1,7 @@
 // file: net_maze.c
 // Build: gcc -Wall -O2 -o net_maze net_maze.c
 // Run:   ./net_maze
-// Connect: nc <server-ip> 1234
+// Connect: nc <server-ip> 4444
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +17,7 @@
 #define MAZE_W 21
 #define MAZE_H 11
 
+// Simple maze: '#' wall, ' ' floor, 'E' exit
 static const char *maze_template[MAZE_H] = {
     "#####################",
     "#   #       #       #",
@@ -31,25 +32,31 @@ static const char *maze_template[MAZE_H] = {
     "#####################"
 };
 
-static void send_all(int fd, const char *buf, size_t len) {
+void send_all(int fd, const char *buf, size_t len) {
     size_t sent = 0;
     while (sent < len) {
         ssize_t n = send(fd, buf + sent, len - sent, 0);
-        if (n <= 0) { if (n < 0 && errno == EINTR) continue; break; }
+        if (n <= 0) {
+            // if interrupted by signal, try again
+            if (n < 0 && errno == EINTR) continue;
+            break;
+        }
         sent += (size_t)n;
     }
 }
 
-static ssize_t recv_line(int fd, char *buf, size_t maxlen) {
+ssize_t recv_line(int fd, char *buf, size_t maxlen) {
+    // Read until newline or maxlen-1 reached. Returns bytes read (excluding null).
     size_t idx = 0;
     while (idx < maxlen - 1) {
         char c;
         ssize_t n = recv(fd, &c, 1, 0);
         if (n == 1) {
-            if (c == '\r') continue;
+            if (c == '\r') continue; // skip CR
             if (c == '\n') break;
             buf[idx++] = c;
         } else if (n == 0) {
+            // connection closed
             break;
         } else {
             if (errno == EINTR) continue;
@@ -60,23 +67,23 @@ static ssize_t recv_line(int fd, char *buf, size_t maxlen) {
     return (ssize_t)idx;
 }
 
-static void draw_maze_named(int fd, int px, int py, const char *name) {
-    char hdr[128];
-    int n = snprintf(hdr, sizeof(hdr), "\nPlayer: %s\n", name ? name : "player");
-    send_all(fd, hdr, (size_t)n);
-
-    char line[64];
-    for (int y = 0; y < MAZE_H; ++y) {
-        for (int x = 0; x < MAZE_W; ++x) {
-            char c = maze_template[y][x];
-            if (x == px && y == py) c = '@';
-            line[x] = c;
+void draw_and_send_maze(int client_fd, char maze[MAZE_H][MAZE_W+1], const char *name, int px, int py) {
+    char out[MAX_LEN];
+    int len = 0;
+    len += snprintf(out + len, sizeof(out) - len, "\nPlayer: %s\n", name);
+    for (int y = 0; y < MAZE_H && len < (int)sizeof(out) - 1; ++y) {
+        for (int x = 0; x < MAZE_W && len < (int)sizeof(out) - 1; ++x) {
+            if (x == px && y == py) {
+                out[len++] = '@'; // player character
+            } else {
+                out[len++] = maze[y][x];
+            }
         }
-        line[MAZE_W] = '\0';
-        send_all(fd, line, strlen(line));
-        send_all(fd, "\n", 1);
+        out[len++] = '\n';
     }
-    send_all(fd, "\n", 1);
+    out[len++] = '\n';
+    out[len] = '\0';
+    send_all(client_fd, out, (size_t)len);
 }
 
 int main(void) {
@@ -86,7 +93,11 @@ int main(void) {
     char linebuf[MAX_LEN];
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) { perror("socket"); return 1; }
+    if (server_fd < 0) {
+        perror("socket");
+        return 1;
+    }
+
     int opt = 1;
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
@@ -95,104 +106,35 @@ int main(void) {
     server_addr.sin_port = htons(PORT);
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(server_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) { perror("bind"); close(server_fd); return 1; }
-    if (listen(server_fd, 4) < 0) { perror("listen"); close(server_fd); return 1; }
+    if (bind(server_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        perror("bind");
+        close(server_fd);
+        return 1;
+    }
+
+    if (listen(server_fd, 4) < 0) {
+        perror("listen");
+        close(server_fd);
+        return 1;
+    }
 
     printf("Listening on port %d...\n", PORT);
 
     while (1) {
         client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
-        if (client_fd < 0) { perror("accept"); continue; }
+        if (client_fd < 0) {
+            perror("accept");
+            continue;
+        }
 
-        const char *welcome = "Welcome to maze server! Send your player name:\n";
-        send_all(client_fd, welcome, strlen(welcome));
+        char client_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
+        printf("Accepted connection from %s:%d\n", client_ip, ntohs(client_addr.sin_port));
+
+        // Send welcome and ask for name
+        const char *welcome_msg = "Welcome to maze server! Send your player name (max 31 chars):\n";
+        send_all(client_fd, welcome_msg, strlen(welcome_msg));
+
+        // Read name line safely
         ssize_t n = recv_line(client_fd, linebuf, sizeof(linebuf));
-        if (n <= 0) { close(client_fd); continue; }
-
-        char player_name[NAME_MAX];
-        char *p = linebuf;
-        while (*p == ' ' || *p == '\t') ++p;
-        strncpy(player_name, p, NAME_MAX-1);
-        player_name[NAME_MAX-1] = '\0';
-        for (int i = (int)strlen(player_name) - 1; i >= 0; --i) {
-            if (player_name[i] == ' ' || player_name[i] == '\t' || player_name[i] == '\r' || player_name[i] == '\n') player_name[i] = '\0';
-            else break;
-        }
-        if (player_name[0] == '\0') {
-            strncpy(player_name, "player", NAME_MAX-1);
-            player_name[NAME_MAX-1] = '\0';
-        }
-
-        const char *inst = "Controls: w=up, s=down, a=left, d=right, q=quit\nReach 'E' to win.\n";
-        send_all(client_fd, inst, strlen(inst));
-
-        int px = 1, py = 1;
-        if (maze_template[py][px] == '#') {
-            int found = 0;
-            for (int y = 0; y < MAZE_H && !found; ++y) {
-                for (int x = 0; x < MAZE_W; ++x) {
-                    if (maze_template[y][x] == ' ') { px = x; py = y; found = 1; break; }
-                }
-            }
-        }
-        draw_maze_named(client_fd, px, py, player_name);
-
-        while (1) {
-            send_all(client_fd, "Your move> ", 11);
-            ssize_t r = recv_line(client_fd, linebuf, sizeof(linebuf));
-            if (r <= 0) break;
-            char cmd = '\0';
-            for (ssize_t i = 0; i < r; ++i) {
-                if (linebuf[i] == '\r' || linebuf[i] == '\n') continue;
-                if (linebuf[i] == ' ' || linebuf[i] == '\t') continue;
-                cmd = linebuf[i];
-                break;
-            }
-            if (cmd == '\0') continue;
-
-            int nx = px, ny = py;
-            if (cmd == 'w' || cmd == 'W') --ny;
-            else if (cmd == 's' || cmd == 'S') ++ny;
-            else if (cmd == 'a' || cmd == 'A') --nx;
-            else if (cmd == 'd' || cmd == 'D') ++nx;
-            else if (cmd == 'q' || cmd == 'Q') {
-                const char *bye = "Goodbye!\n";
-                send_all(client_fd, bye, strlen(bye));
-                break;
-            } else {
-                const char *unk = "Unknown command. Use w/a/s/d to move, q to quit.\n";
-                send_all(client_fd, unk, strlen(unk));
-                continue;
-            }
-
-            if (nx < 0 || nx >= MAZE_W || ny < 0 || ny >= MAZE_H) {
-                const char *oob = "Can't move outside maze.\n";
-                send_all(client_fd, oob, strlen(oob));
-                continue;
-            }
-            if (maze_template[ny][nx] == '#') {
-                const char *wall = "Hit a wall.\n";
-                send_all(client_fd, wall, strlen(wall));
-                continue;
-            }
-
-            px = nx; py = ny;
-
-            if (maze_template[py][px] == 'E') {
-                char winmsg[128];
-                int wn = snprintf(winmsg, sizeof(winmsg), "\nCongratulations %s! You reached the exit!\n\n", player_name);
-                send_all(client_fd, winmsg, (size_t)wn);
-                draw_maze_named(client_fd, px, py, player_name);
-                break;
-            }
-
-            draw_maze_named(client_fd, px, py, player_name);
-        }
-
-        close(client_fd);
-    }
-
-    close(server_fd);
-    return 0;
-}
 

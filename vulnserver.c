@@ -12,7 +12,7 @@
 #include <errno.h>
 
 #define MAX_LEN 512
-#define PORT 1234
+#define PORT 4444
 #define NAME_MAX 32
 #define MAZE_W 21
 #define MAZE_H 11
